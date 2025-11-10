@@ -28,45 +28,58 @@ function get_docker_status(container) {
     // Use CTFd.fetch to call the API
     CTFd.fetch("/api/v1/docker_status").then(response => response.json())
     .then(result => {
+        console.log('[DEBUG] API Response:', result);
+        console.log('[DEBUG] Looking for container:', container);
+        console.log('[DEBUG] Available containers:', result.data.map(item => item.docker_image));
+
+        let containerFound = false;
+
         result.data.forEach(item => {
+            console.log('[DEBUG] Comparing:', item.docker_image, '==', container, '?', item.docker_image == container);
+
             if (item.docker_image == container) {
+                containerFound = true;
+                console.log('[DEBUG] Container found! Displaying info...');
+
                 // Split the ports and create the data string
                 var ports = String(item.ports).split(',');
                 var data = '';
-                
+
                 ports.forEach(port => {
                     port = String(port);
                     data = data + 'Host: ' + item.host + ' Port: ' + port + '<br />';
                 });
                 // Update the DOM with the docker container information
-                CTFd.lib.$('#docker_container').html('<pre>Docker Container Information:<br />' + data + 
+                CTFd.lib.$('#docker_container').html('<pre>Docker Container Information:<br />' + data +
                 '<div class="mt-2" id="' + String(item.instance_id).substring(0, 10) + '_revert_container"></div>');
 
-                // Update the DOM with connection info information.
+                // Update the DOM with connection info information (if it exists).
                 // Note that connection info should contain "host" and "port"
                 var $link = CTFd.lib.$('.challenge-connection-info');
-                $link.html($link.html().replace(/host/gi, item.host));
-                $link.html($link.html().replace(/port|\b\d{5}\b/gi, ports[0].split("/")[0]));
+                if ($link.length > 0 && $link.html()) {
+                    $link.html($link.html().replace(/host/gi, item.host));
+                    $link.html($link.html().replace(/port|\b\d{5}\b/gi, ports[0].split("/")[0]));
 
-                // Check if there are links in there, if not and we use a http[s] address, make it a link
-                CTFd.lib.$(".challenge-connection-info").each(function () {
-                    const $span = CTFd.lib.$(this);
-                    const html = $span.html();
-                
-                    // Skip if already has a link
-                    if (html.includes("<a")) {
-                        return;
-                    }
-                
-                    // If it contains "http", try to extract and wrap it
-                    const urlMatch = html.match(/(http[s]?:\/\/[^\s<]+)/);
-                
-                    if (urlMatch) {
-                        const url = urlMatch[0];
-                        const linked = html.replace(url, `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
-                        $span.html(linked);
-                    }
-                });
+                    // Check if there are links in there, if not and we use a http[s] address, make it a link
+                    CTFd.lib.$(".challenge-connection-info").each(function () {
+                        const $span = CTFd.lib.$(this);
+                        const html = $span.html();
+
+                        // Skip if already has a link
+                        if (html.includes("<a")) {
+                            return;
+                        }
+
+                        // If it contains "http", try to extract and wrap it
+                        const urlMatch = html.match(/(http[s]?:\/\/[^\s<]+)/);
+
+                        if (urlMatch) {
+                            const url = urlMatch[0];
+                            const linked = html.replace(url, `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
+                            $span.html(linked);
+                        }
+                    });
+                }
 
                 // Set up the countdown timer
                 var countDownDate = new Date(parseInt(item.revert_time) * 1000).getTime();
@@ -97,18 +110,32 @@ function get_docker_status(container) {
                 return false; // Stop once the correct container is found
             }
         });
+
+        console.log('[DEBUG] Container found status:', containerFound);
+
+        // Display the normal start button only if no container was found
+        if (!containerFound) {
+            console.log('[DEBUG] No container found, showing start button');
+            const NormalStartButtonHTML=`
+                <span>
+                    <a onclick="start_container('${CTFd._internal.challenge.data.docker_image}');" class='btn btn-dark'>
+                        <small style='color:white;'><i class="fas fa-play"></i>  Start Docker Instance for challenge</small>
+                    </a>
+                </span>`;
+            CTFd.lib.$('#docker_container').html(NormalStartButtonHTML);
+        }
     })
     .catch(error => {
         console.error('Error fetching docker status:', error);
+        // On error, show the start button
+        const NormalStartButtonHTML=`
+            <span>
+                <a onclick="start_container('${CTFd._internal.challenge.data.docker_image}');" class='btn btn-dark'>
+                    <small style='color:white;'><i class="fas fa-play"></i>  Start Docker Instance for challenge</small>
+                </a>
+            </span>`;
+        CTFd.lib.$('#docker_container').html(NormalStartButtonHTML);
     });
-    // Display the normal start button, if there is no need for updating
-    const NormalStartButtonHTML=`
-        <span>
-            <a onclick="start_container('${CTFd._internal.challenge.data.docker_image}');" class='btn btn-dark'>
-                <small style='color:white;'><i class="fas fa-play"></i>  Start Docker Instance for challenge</small>
-            </a>
-        </span>`
-    CTFd.lib.$('#docker_container').html(NormalStartButtonHTML);
 }
 
 function stop_container(container) {
