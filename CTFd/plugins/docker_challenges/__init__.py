@@ -1,5 +1,4 @@
 import traceback
-
 from CTFd.plugins.challenges import BaseChallenge, CHALLENGE_CLASSES, get_chal_class
 from CTFd.plugins.flags import get_flag_class
 from CTFd.utils.user import get_ip
@@ -277,14 +276,47 @@ def get_repositories(docker, tags=False, repos=False):
                     result.append(i['RepoTags'][0])
     return list(set(result))
 
+import json
+import requests
 
-def get_unavailable_ports(docker):
-    r = do_request(docker, '/containers/json?all=1')
-    result = list()
-    for i in r.json():
-        if not i['Ports'] == []:
-            for p in i['Ports']:
-                result.append(p['PublicPort'])
+def get_unavailable_ports(docker_config):
+    """
+    Return a list of host ports already in use by running containers.
+    Uses the Docker Remote API instead of the docker-py SDK.
+    Works whether docker_config points to a local socket or remote proxy.
+    """
+    result = []
+
+    try:
+        # Determine API base URL from plugin configuration
+        base_url = getattr(docker_config, "url", None)
+        if not base_url:
+            # Default to local Docker socket proxy (used in many CTFd setups)
+            base_url = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
+
+        # Normalize URL: docker proxy often looks like http://docker:2375
+        if base_url.startswith("unix://"):
+            # Convert to requests-compatible socket path via requests-unixsocket
+            import requests_unixsocket
+            session = requests_unixsocket.Session()
+            r = session.get(base_url + "/containers/json")
+        else:
+            # Use normal HTTP(s)
+            r = requests.get(base_url.rstrip("/") + "/containers/json")
+
+        r.raise_for_status()
+        containers = r.json()
+
+        for c in containers:
+            ports = c.get("Ports", [])
+            for p in ports:
+                # Docker API returns [{'PrivatePort': 80, 'PublicPort': 8080, 'Type': 'tcp'}, ...]
+                if "PublicPort" in p:
+                    result.append(p["PublicPort"])
+
+    except Exception as e:
+        print("Error fetching unavailable ports:", e)
+
     return result
 
 
